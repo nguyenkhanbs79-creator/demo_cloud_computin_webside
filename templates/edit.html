@@ -11,11 +11,23 @@
         <form method="post" action="{{ url_for('update_task', task_id=task.id) }}">
           <div class="mb-3">
             <label for="title" class="form-label">Title</label>
-            <input type="text" class="form-control" id="title" name="title" value="{{ task.title }}" required />
+            <input
+              type="text"
+              class="form-control"
+              id="title"
+              name="title"
+              value="{{ task.title }}"
+              required
+            />
           </div>
           <div class="mb-3">
             <label for="description" class="form-label">Description</label>
-            <textarea class="form-control" id="description" name="description" rows="4">{{ task.description }}</textarea>
+            <textarea
+              class="form-control"
+              id="description"
+              name="description"
+              rows="4"
+            >{{ task.description }}</textarea>
           </div>
           <div class="mb-4">
             <label for="status" class="form-label">Status</label>
