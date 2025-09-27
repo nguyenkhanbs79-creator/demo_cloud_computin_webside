@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from typing import Optional
 
-from flask import Flask, redirect, render_template, request, url_for, flash
+from flask import Flask, redirect, render_template, request, url_for, flash, jsonify
 from google.cloud import datastore
 
 
@@ -26,6 +26,14 @@ def create_app() -> Flask:
             "status": entity.get("status", "pending"),
             "created_at": entity.get("created_at"),
         }
+
+    def serialize_task(task: dict) -> dict:
+        """Chuyển task -> dict an toàn để trả JSON (đặc biệt là created_at)."""
+        serialized = task.copy()
+        created_at = serialized.get("created_at")
+        if isinstance(created_at, datetime):
+            serialized["created_at"] = created_at.isoformat()
+        return serialized
 
     @app.route("/")
     def index():
@@ -104,6 +112,37 @@ def create_app() -> Flask:
         client.delete(key)
         flash("Task deleted.", "info")
         return redirect(url_for("index"))
+
+    # -------- JSON APIs cho modal-driven actions --------
+
+    @app.post("/api/tasks/<int:task_id>/update")
+    def api_update_task(task_id: int):
+        entity = get_task_or_404(task_id)
+        if entity is None:
+            return jsonify({"ok": False, "error": "Task not found."}), 404
+
+        payload = request.get_json(silent=True) or {}
+        title = (payload.get("title") or "").strip()
+        description = (payload.get("description") or "").strip()
+        status = payload.get("status") or "pending"
+
+        if not title:
+            return jsonify({"ok": False, "error": "Title is required."}), 400
+
+        entity.update({"title": title, "description": description, "status": status})
+        client.put(entity)
+
+        task = entity_to_dict(entity)
+        return jsonify({"ok": True, "task": serialize_task(task)})
+
+    @app.post("/api/tasks/<int:task_id>/delete")
+    def api_delete_task(task_id: int):
+        entity = get_task_or_404(task_id)
+        if entity is None:
+            return jsonify({"ok": False, "error": "Task not found."}), 404
+
+        client.delete(entity.key)
+        return jsonify({"ok": True})
 
     return app
 

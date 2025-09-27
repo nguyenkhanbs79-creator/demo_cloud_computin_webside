@@ -25,6 +25,7 @@
 
     <main class="flex-grow-1">
       <div class="container py-4">
+        {# Flash messages do Flask #}
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             <div class="mb-3">
@@ -40,6 +41,9 @@
             </div>
           {% endif %}
         {% endwith %}
+
+        {# Vùng chứa alert động cho các hành động fetch/JSON #}
+        <div id="dynamic-alerts" class="mb-3"></div>
 
         {% block content %}{% endblock %}
       </div>
@@ -58,15 +62,41 @@
     ></script>
     <script>
       document.addEventListener("DOMContentLoaded", () => {
+        // Năm footer
         const yearElement = document.getElementById("current-year");
-        if (yearElement) yearElement.textContent = new Date().getFullYear();
+        if (yearElement) {
+          yearElement.textContent = new Date().getFullYear();
+        }
 
-        // tự tắt alert sau 3s
-        document.querySelectorAll(".alert").forEach((el) => {
-          const inst = bootstrap.Alert.getOrCreateInstance(el);
-          setTimeout(() => inst.close(), 3000);
+        // Tự đóng các alert flash sau 3s
+        document.querySelectorAll(".alert").forEach((alertElement) => {
+          const alertInstance = bootstrap.Alert.getOrCreateInstance(alertElement);
+          setTimeout(() => {
+            alertInstance.close();
+          }, 3000);
         });
+
+        // Helper alert động cho các thao tác fetch/JSON
+        const alertContainer = document.getElementById("dynamic-alerts");
+        function showAlert(message, category = "info") {
+          if (!alertContainer) return;
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = `
+            <div class="alert alert-${category} alert-dismissible fade show" role="alert">
+              ${message}
+              <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+          `;
+          const alertElement = wrapper.firstElementChild;
+          alertContainer.appendChild(alertElement);
+          const alertInstance = bootstrap.Alert.getOrCreateInstance(alertElement);
+          setTimeout(() => alertInstance.close(), 3000);
+        }
+
+        // Expose helper toàn cục để các trang con dùng
+        window.todoApp = Object.assign(window.todoApp || {}, { showAlert });
       });
     </script>
+    {% block scripts %}{% endblock %}
   </body>
 </html>
