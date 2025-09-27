@@ -2,6 +2,7 @@
 {% block title %}Todo List{% endblock %}
 {% block content %}
 <div class="row g-4">
+  <!-- Form tạo task -->
   <div class="col-12 col-lg-5">
     <div class="card shadow-sm border-0 h-100">
       <div class="card-body">
@@ -30,11 +31,15 @@
       </div>
     </div>
   </div>
+
+  <!-- Danh sách task -->
   <div class="col-12 col-lg-7">
     <div class="card shadow-sm border-0 h-100">
       <div class="card-header bg-white border-0 pb-0">
         <h2 class="h5 mb-0">Tasks</h2>
       </div>
+
+      <!-- list -->
       <div class="list-group list-group-flush {% if not tasks %}d-none{% endif %}" id="tasksList">
         {% for task in tasks %}
         <div
@@ -51,13 +56,18 @@
                 {{ task.description or 'No description' }}
               </p>
             </div>
-            <small class="text-muted ms-3">{{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at }}</small>
+            <small class="text-muted ms-3">
+              {{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at }}
+            </small>
           </div>
+
           <div class="d-flex flex-wrap align-items-center gap-2">
             {% set badge_classes = 'text-bg-success' if task.status == 'done' else 'text-bg-warning text-dark' %}
             <span class="badge text-uppercase task-status-badge {{ badge_classes }}">
               {{ 'Done' if task.status == 'done' else 'Pending' }}
             </span>
+
+            <!-- Edit via modal -->
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary"
@@ -68,12 +78,10 @@
               <i class="bi bi-pencil-square me-1"></i>
               Edit
             </button>
+
+            <!-- Mark done (form post truyền thống) -->
             <div class="mark-done-container {% if task.status == 'done' %}d-none{% endif %}">
-              <form
-                method="post"
-                action="{{ url_for('update_task', task_id=task.id) }}"
-                class="d-inline"
-              >
+              <form method="post" action="{{ url_for('update_task', task_id=task.id) }}" class="d-inline">
                 <input type="hidden" name="title" value="{{ task.title | default('', true) | e }}" />
                 <input type="hidden" name="description" value="{{ task.description | default('', true) | e }}" />
                 <input type="hidden" name="status" value="done" />
@@ -83,6 +91,8 @@
                 </button>
               </form>
             </div>
+
+            <!-- Delete via modal -->
             <button
               type="button"
               class="btn btn-sm btn-outline-danger"
@@ -97,6 +107,8 @@
         </div>
         {% endfor %}
       </div>
+
+      <!-- empty state -->
       <div class="card-body {% if tasks %}d-none{% endif %}" id="emptyState">
         <p class="text-muted mb-0">No tasks yet. Add one above!</p>
       </div>
@@ -104,6 +116,7 @@
   </div>
 </div>
 
+<!-- Edit modal -->
 <div class="modal fade" id="editTaskModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -141,6 +154,7 @@
   </div>
 </div>
 
+<!-- Delete modal -->
 <div class="modal fade" id="deleteTaskModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -165,171 +179,155 @@
 {% endblock %}
 
 {% block scripts %}
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const editModalElement = document.getElementById("editTaskModal");
-      const deleteModalElement = document.getElementById("deleteTaskModal");
-      const editModal = editModalElement ? bootstrap.Modal.getOrCreateInstance(editModalElement) : null;
-      const deleteModal = deleteModalElement ? bootstrap.Modal.getOrCreateInstance(deleteModalElement) : null;
-      const editForm = document.getElementById("editTaskForm");
-      const editTitleInput = document.getElementById("editTaskTitle");
-      const editDescriptionInput = document.getElementById("editTaskDescription");
-      const editStatusSelect = document.getElementById("editTaskStatus");
-      const saveTaskButton = document.getElementById("saveTaskButton");
-      const deleteTaskTitle = document.getElementById("deleteTaskTitle");
-      const confirmDeleteButton = document.getElementById("confirmDeleteButton");
-      const tasksList = document.getElementById("tasksList");
-      const emptyState = document.getElementById("emptyState");
-      let currentTaskId = null;
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const editModalEl = document.getElementById("editTaskModal");
+    const deleteModalEl = document.getElementById("deleteTaskModal");
+    const editModal = editModalEl ? bootstrap.Modal.getOrCreateInstance(editModalEl) : null;
+    const deleteModal = deleteModalEl ? bootstrap.Modal.getOrCreateInstance(deleteModalEl) : null;
 
-      function toggleButtonLoading(button, isLoading) {
-        if (!button) return;
-        const spinner = button.querySelector(".spinner-border");
-        const text = button.querySelector(".button-text");
-        if (spinner) {
-          spinner.classList.toggle("d-none", !isLoading);
-        }
-        if (text) {
-          text.classList.toggle("d-none", isLoading);
-        }
-        button.disabled = isLoading;
-      }
+    const editForm = document.getElementById("editTaskForm");
+    const editTitleInput = document.getElementById("editTaskTitle");
+    const editDescriptionInput = document.getElementById("editTaskDescription");
+    const editStatusSelect = document.getElementById("editTaskStatus");
+    const saveTaskButton = document.getElementById("saveTaskButton");
 
-      function updateEmptyStateVisibility() {
-        if (!tasksList || !emptyState) return;
-        const hasItems = tasksList.querySelectorAll(".task-item").length > 0;
-        tasksList.classList.toggle("d-none", !hasItems);
-        emptyState.classList.toggle("d-none", hasItems);
-      }
+    const deleteTaskTitle = document.getElementById("deleteTaskTitle");
+    const confirmDeleteButton = document.getElementById("confirmDeleteButton");
 
-      function hydrateTaskData(taskElement, data) {
-        if (!taskElement) return;
-        taskElement.dataset.taskTitle = data.title || "";
-        taskElement.dataset.taskDescription = data.description || "";
-        taskElement.dataset.taskStatus = data.status || "pending";
+    const tasksList = document.getElementById("tasksList");
+    const emptyState = document.getElementById("emptyState");
 
-        const titleElement = taskElement.querySelector(".task-title");
-        const descriptionElement = taskElement.querySelector(".task-description");
-        const badgeElement = taskElement.querySelector(".task-status-badge");
-        const markDoneContainer = taskElement.querySelector(".mark-done-container");
+    let currentTaskId = null;
 
-        if (titleElement) {
-          titleElement.textContent = data.title;
-        }
-        if (descriptionElement) {
-          descriptionElement.textContent = data.description || "No description";
-        }
-        if (badgeElement) {
-          badgeElement.textContent = data.status === "done" ? "Done" : "Pending";
-          badgeElement.classList.remove("text-bg-success", "text-bg-warning", "text-dark");
-          if (data.status === "done") {
-            badgeElement.classList.add("text-bg-success");
-          } else {
-            badgeElement.classList.add("text-bg-warning", "text-dark");
-          }
-        }
-        if (markDoneContainer) {
-          markDoneContainer.classList.toggle("d-none", data.status === "done");
+    function toggleButtonLoading(button, isLoading) {
+      if (!button) return;
+      const spinner = button.querySelector(".spinner-border");
+      const text = button.querySelector(".button-text");
+      if (spinner) spinner.classList.toggle("d-none", !isLoading);
+      if (text) text.classList.toggle("d-none", isLoading);
+      button.disabled = isLoading;
+    }
+
+    function updateEmptyStateVisibility() {
+      if (!tasksList || !emptyState) return;
+      const hasItems = tasksList.querySelectorAll(".task-item").length > 0;
+      tasksList.classList.toggle("d-none", !hasItems);
+      emptyState.classList.toggle("d-none", hasItems);
+    }
+
+    function hydrateTaskData(taskEl, data) {
+      if (!taskEl) return;
+      taskEl.dataset.taskTitle = data.title || "";
+      taskEl.dataset.taskDescription = data.description || "";
+      taskEl.dataset.taskStatus = data.status || "pending";
+
+      const titleEl = taskEl.querySelector(".task-title");
+      const descEl = taskEl.querySelector(".task-description");
+      const badgeEl = taskEl.querySelector(".task-status-badge");
+      const markDoneWrap = taskEl.querySelector(".mark-done-container");
+
+      if (titleEl) titleEl.textContent = data.title;
+      if (descEl) descEl.textContent = data.description || "No description";
+      if (badgeEl) {
+        badgeEl.textContent = data.status === "done" ? "Done" : "Pending";
+        badgeEl.classList.remove("text-bg-success", "text-bg-warning", "text-dark");
+        if (data.status === "done") {
+          badgeEl.classList.add("text-bg-success");
+        } else {
+          badgeEl.classList.add("text-bg-warning", "text-dark");
         }
       }
+      if (markDoneWrap) markDoneWrap.classList.toggle("d-none", data.status === "done");
+    }
 
-      document.querySelectorAll(".task-item [data-action='edit']").forEach((button) => {
-        button.addEventListener("click", (event) => {
-          const taskElement = event.currentTarget.closest(".task-item");
-          if (!taskElement) return;
-          currentTaskId = taskElement.dataset.taskId;
-          editTitleInput.value = taskElement.dataset.taskTitle || "";
-          editDescriptionInput.value = taskElement.dataset.taskDescription || "";
-          editStatusSelect.value = taskElement.dataset.taskStatus || "pending";
-        });
+    // open edit modal
+    document.querySelectorAll(".task-item [data-action='edit']").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const taskEl = e.currentTarget.closest(".task-item");
+        if (!taskEl) return;
+        currentTaskId = taskEl.dataset.taskId;
+        editTitleInput.value = taskEl.dataset.taskTitle || "";
+        editDescriptionInput.value = taskEl.dataset.taskDescription || "";
+        editStatusSelect.value = taskEl.dataset.taskStatus || "pending";
       });
-
-      document.querySelectorAll(".task-item [data-action='delete']").forEach((button) => {
-        button.addEventListener("click", (event) => {
-          const taskElement = event.currentTarget.closest(".task-item");
-          if (!taskElement) return;
-          currentTaskId = taskElement.dataset.taskId;
-          deleteTaskTitle.textContent = taskElement.dataset.taskTitle || "";
-        });
-      });
-
-      if (editForm) {
-        editForm.addEventListener("submit", async (event) => {
-          event.preventDefault();
-          if (!currentTaskId) return;
-          toggleButtonLoading(saveTaskButton, true);
-          try {
-            const response = await fetch(`/api/tasks/${currentTaskId}/update`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                title: editTitleInput.value,
-                description: editDescriptionInput.value,
-                status: editStatusSelect.value,
-              }),
-            });
-            let data = null;
-            try {
-              data = await response.json();
-            } catch (parseError) {
-              window.todoApp?.showAlert("Unexpected response from the server.", "danger");
-              return;
-            }
-            if (!response.ok || !data.ok) {
-              const message = data.error || "Failed to update the task.";
-              window.todoApp?.showAlert(message, "danger");
-              return;
-            }
-            const taskElement = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
-            hydrateTaskData(taskElement, data.task);
-            window.todoApp?.showAlert("Task updated successfully!", "success");
-            editModal?.hide();
-            currentTaskId = null;
-          } catch (error) {
-            window.todoApp?.showAlert("Network error. Please try again.", "danger");
-          } finally {
-            toggleButtonLoading(saveTaskButton, false);
-          }
-        });
-      }
-
-      if (confirmDeleteButton) {
-        confirmDeleteButton.addEventListener("click", async () => {
-          if (!currentTaskId) return;
-          toggleButtonLoading(confirmDeleteButton, true);
-          try {
-            const response = await fetch(`/api/tasks/${currentTaskId}/delete`, {
-              method: "POST",
-            });
-            let data = null;
-            try {
-              data = await response.json();
-            } catch (parseError) {
-              window.todoApp?.showAlert("Unexpected response from the server.", "danger");
-              return;
-            }
-            if (!response.ok || !data.ok) {
-              const message = data.error || "Failed to delete the task.";
-              window.todoApp?.showAlert(message, "danger");
-              return;
-            }
-            const taskElement = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
-            if (taskElement) {
-              taskElement.remove();
-              updateEmptyStateVisibility();
-            }
-            window.todoApp?.showAlert("Task deleted.", "info");
-            deleteModal?.hide();
-            currentTaskId = null;
-          } catch (error) {
-            window.todoApp?.showAlert("Network error. Please try again.", "danger");
-          } finally {
-            toggleButtonLoading(confirmDeleteButton, false);
-          }
-        });
-      }
-
-      updateEmptyStateVisibility();
     });
-  </script>
+
+    // open delete modal
+    document.querySelectorAll(".task-item [data-action='delete']").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const taskEl = e.currentTarget.closest(".task-item");
+        if (!taskEl) return;
+        currentTaskId = taskEl.dataset.taskId;
+        deleteTaskTitle.textContent = taskEl.dataset.taskTitle || "";
+      });
+    });
+
+    // submit edit via JSON
+    if (editForm) {
+      editForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        if (!currentTaskId) return;
+        toggleButtonLoading(saveTaskButton, true);
+        try {
+          const res = await fetch(`/api/tasks/${currentTaskId}/update`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: editTitleInput.value,
+              description: editDescriptionInput.value,
+              status: editStatusSelect.value,
+            }),
+          });
+          let data = null;
+          try { data = await res.json(); } catch { window.todoApp?.showAlert("Unexpected response from the server.", "danger"); return; }
+          if (!res.ok || !data.ok) {
+            window.todoApp?.showAlert(data.error || "Failed to update the task.", "danger");
+            return;
+          }
+          const taskEl = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
+          hydrateTaskData(taskEl, data.task);
+          window.todoApp?.showAlert("Task updated successfully!", "success");
+          editModal?.hide();
+          currentTaskId = null;
+        } catch {
+          window.todoApp?.showAlert("Network error. Please try again.", "danger");
+        } finally {
+          toggleButtonLoading(saveTaskButton, false);
+        }
+      });
+    }
+
+    // confirm delete via JSON
+    if (confirmDeleteButton) {
+      confirmDeleteButton.addEventListener("click", async () => {
+        if (!currentTaskId) return;
+        toggleButtonLoading(confirmDeleteButton, true);
+        try {
+          const res = await fetch(`/api/tasks/${currentTaskId}/delete`, { method: "POST" });
+          let data = null;
+          try { data = await res.json(); } catch { window.todoApp?.showAlert("Unexpected response from the server.", "danger"); return; }
+          if (!res.ok || !data.ok) {
+            window.todoApp?.showAlert(data.error || "Failed to delete the task.", "danger");
+            return;
+          }
+          const taskEl = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
+          if (taskEl) {
+            taskEl.remove();
+            updateEmptyStateVisibility();
+          }
+          window.todoApp?.showAlert("Task deleted.", "info");
+          deleteModal?.hide();
+          currentTaskId = null;
+        } catch {
+          window.todoApp?.showAlert("Network error. Please try again.", "danger");
+        } finally {
+          toggleButtonLoading(confirmDeleteButton, false);
+        }
+      });
+    }
+
+    updateEmptyStateVisibility();
+  });
+</script>
 {% endblock %}

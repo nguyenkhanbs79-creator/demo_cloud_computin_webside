@@ -28,6 +28,7 @@ def create_app() -> Flask:
         }
 
     def serialize_task(task: dict) -> dict:
+        """Chuyển task -> dict an toàn để trả JSON (đặc biệt là created_at)."""
         serialized = task.copy()
         created_at = serialized.get("created_at")
         if isinstance(created_at, datetime):
@@ -111,6 +112,8 @@ def create_app() -> Flask:
         client.delete(key)
         flash("Task deleted.", "info")
         return redirect(url_for("index"))
+
+    # -------- JSON APIs cho modal-driven actions --------
 
     @app.post("/api/tasks/<int:task_id>/update")
     def api_update_task(task_id: int):
