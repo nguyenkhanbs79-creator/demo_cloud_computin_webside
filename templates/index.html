@@ -2,6 +2,7 @@
 {% block title %}Todo List{% endblock %}
 {% block content %}
 <div class="row g-4">
+  <!-- Form tạo task -->
   <div class="col-12 col-lg-5">
     <div class="card shadow-sm border-0 h-100">
       <div class="card-body">
@@ -30,11 +31,15 @@
       </div>
     </div>
   </div>
+
+  <!-- Danh sách task -->
   <div class="col-12 col-lg-7">
     <div class="card shadow-sm border-0 h-100">
       <div class="card-header border-0 pb-0">
         <h2 class="h5 mb-0">Tasks</h2>
       </div>
+
+      <!-- thanh search + filter -->
       <div class="card-body pb-0">
         <div class="row g-2 g-sm-3 align-items-center">
           <div class="col-12 col-sm">
@@ -61,6 +66,8 @@
           </div>
         </div>
       </div>
+
+      <!-- list -->
       <div class="list-group list-group-flush {% if not tasks %}d-none{% endif %}" id="tasksList">
         {% for task in tasks %}
         <div
@@ -78,12 +85,17 @@
                 {{ task.description or 'No description' }}
               </p>
             </div>
-            <small class="text-muted ms-3 task-created-time">{{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at }}</small>
+            <small class="text-muted ms-3 task-created-time">
+              {{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at }}
+            </small>
           </div>
+
           <div class="d-flex flex-wrap align-items-center gap-2">
             <span class="badge text-uppercase task-status-badge" data-status="{{ task.status }}">
               {{ 'Done' if task.status == 'done' else 'Pending' }}
             </span>
+
+            <!-- Edit via modal -->
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary"
@@ -94,6 +106,8 @@
               <i class="bi bi-pencil-square me-1"></i>
               Edit
             </button>
+
+            <!-- Mark done via JSON toggle -->
             <div class="mark-done-container {% if task.status == 'done' %}d-none{% endif %}">
               <button type="button" class="btn btn-sm btn-outline-success" data-action="toggle-done">
                 <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
@@ -103,6 +117,8 @@
                 </span>
               </button>
             </div>
+
+            <!-- Delete via modal -->
             <button
               type="button"
               class="btn btn-sm btn-outline-danger"
@@ -117,6 +133,8 @@
         </div>
         {% endfor %}
       </div>
+
+      <!-- empty state -->
       <div class="card-body {% if tasks %}d-none{% endif %}" id="emptyState">
         <p class="text-muted mb-0">No tasks to display. Try adjusting your filters or add a new task.</p>
       </div>
@@ -124,6 +142,7 @@
   </div>
 </div>
 
+<!-- Edit modal -->
 <div class="modal fade" id="editTaskModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -161,6 +180,7 @@
   </div>
 </div>
 
+<!-- Delete modal -->
 <div class="modal fade" id="deleteTaskModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -185,293 +205,231 @@
 {% endblock %}
 
 {% block scripts %}
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const editModalElement = document.getElementById("editTaskModal");
-      const deleteModalElement = document.getElementById("deleteTaskModal");
-      const editModal = editModalElement ? bootstrap.Modal.getOrCreateInstance(editModalElement) : null;
-      const deleteModal = deleteModalElement ? bootstrap.Modal.getOrCreateInstance(deleteModalElement) : null;
-      const editForm = document.getElementById("editTaskForm");
-      const editTitleInput = document.getElementById("editTaskTitle");
-      const editDescriptionInput = document.getElementById("editTaskDescription");
-      const editStatusSelect = document.getElementById("editTaskStatus");
-      const saveTaskButton = document.getElementById("saveTaskButton");
-      const deleteTaskTitle = document.getElementById("deleteTaskTitle");
-      const confirmDeleteButton = document.getElementById("confirmDeleteButton");
-      const tasksList = document.getElementById("tasksList");
-      const emptyState = document.getElementById("emptyState");
-      const searchInput = document.getElementById("taskSearchInput");
-      const statusFilter = document.getElementById("taskStatusFilter");
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const editModalElement = document.getElementById("editTaskModal");
+    const deleteModalElement = document.getElementById("deleteTaskModal");
+    const editModal = editModalElement ? bootstrap.Modal.getOrCreateInstance(editModalElement) : null;
+    const deleteModal = deleteModalElement ? bootstrap.Modal.getOrCreateInstance(deleteModalElement) : null;
 
-      let currentTaskId = null;
-      const filterState = {
-        query: "",
-        status: "all",
-      };
+    const editForm = document.getElementById("editTaskForm");
+    const editTitleInput = document.getElementById("editTaskTitle");
+    const editDescriptionInput = document.getElementById("editTaskDescription");
+    const editStatusSelect = document.getElementById("editTaskStatus");
+    const saveTaskButton = document.getElementById("saveTaskButton");
 
-      function debounce(fn, delay = 300) {
-        let timeoutId;
-        return (...args) => {
-          window.clearTimeout(timeoutId);
-          timeoutId = window.setTimeout(() => fn.apply(null, args), delay);
-        };
+    const deleteTaskTitle = document.getElementById("deleteTaskTitle");
+    const confirmDeleteButton = document.getElementById("confirmDeleteButton");
+
+    const tasksList = document.getElementById("tasksList");
+    const emptyState = document.getElementById("emptyState");
+
+    const searchInput = document.getElementById("taskSearchInput");
+    const statusFilter = document.getElementById("taskStatusFilter");
+
+    let currentTaskId = null;
+    const filterState = { query: "", status: "all" };
+
+    function debounce(fn, delay = 300) {
+      let t;
+      return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), delay); };
+    }
+
+    function toggleButtonLoading(button, isLoading) {
+      if (!button) return;
+      const spinner = button.querySelector(".spinner-border");
+      const text = button.querySelector(".button-text");
+      if (spinner) spinner.classList.toggle("d-none", !isLoading);
+      if (text) text.classList.toggle("d-none", isLoading);
+      button.disabled = isLoading;
+    }
+
+    function updateListVisibility() {
+      if (!tasksList || !emptyState) return;
+      const visible = tasksList.querySelectorAll(".task-item:not(.d-none)").length;
+      tasksList.classList.toggle("d-none", visible === 0);
+      emptyState.classList.toggle("d-none", visible !== 0);
+    }
+
+    function updateRelativeTimeForTask(taskEl) {
+      const timeEl = taskEl?.querySelector(".task-created-time");
+      const createdAt = taskEl?.dataset?.taskCreatedAt;
+      if (!timeEl || !createdAt || typeof dayjs === "undefined" || typeof dayjs().fromNow !== "function") return;
+      const parsed = dayjs(createdAt);
+      if (parsed.isValid()) timeEl.textContent = parsed.fromNow();
+    }
+
+    function updateRelativeTimes() {
+      tasksList?.querySelectorAll(".task-item").forEach(updateRelativeTimeForTask);
+    }
+
+    function hydrateTaskData(taskEl, data) {
+      if (!taskEl) return;
+      taskEl.dataset.taskTitle = data.title || "";
+      taskEl.dataset.taskDescription = data.description || "";
+      taskEl.dataset.taskStatus = data.status || "pending";
+      if (data.created_at) taskEl.dataset.taskCreatedAt = data.created_at;
+
+      const titleEl = taskEl.querySelector(".task-title");
+      const descEl = taskEl.querySelector(".task-description");
+      const badgeEl = taskEl.querySelector(".task-status-badge");
+      const markDoneWrap = taskEl.querySelector(".mark-done-container");
+
+      if (titleEl) titleEl.textContent = data.title;
+      if (descEl) descEl.textContent = data.description || "No description";
+      if (badgeEl) {
+        const s = data.status === "done" ? "done" : "pending";
+        badgeEl.textContent = s === "done" ? "Done" : "Pending";
+        badgeEl.setAttribute("data-status", s);
       }
+      if (markDoneWrap) markDoneWrap.classList.toggle("d-none", data.status === "done");
 
-      function toggleButtonLoading(button, isLoading) {
-        if (!button) return;
-        const spinner = button.querySelector(".spinner-border");
-        const text = button.querySelector(".button-text");
-        if (spinner) {
-          spinner.classList.toggle("d-none", !isLoading);
-        }
-        if (text) {
-          text.classList.toggle("d-none", isLoading);
-        }
-        button.disabled = isLoading;
-      }
+      updateRelativeTimeForTask(taskEl);
+    }
 
-      function updateListVisibility() {
-        if (!tasksList || !emptyState) return;
-        const visibleItems = tasksList.querySelectorAll(".task-item:not(.d-none)").length;
-        tasksList.classList.toggle("d-none", visibleItems === 0);
-        emptyState.classList.toggle("d-none", visibleItems !== 0);
-      }
-
-      function updateRelativeTimeForTask(taskElement) {
-        if (!taskElement) return;
-        const timeElement = taskElement.querySelector(".task-created-time");
-        if (!timeElement) return;
-        const createdAt = taskElement.dataset.taskCreatedAt;
-        if (!createdAt) {
-          timeElement.textContent = "";
-          return;
-        }
-        if (typeof dayjs === "undefined" || typeof dayjs().fromNow !== "function") {
-          return;
-        }
-        const parsed = dayjs(createdAt);
-        if (!parsed.isValid()) {
-          return;
-        }
-        timeElement.textContent = parsed.fromNow();
-      }
-
-      function updateRelativeTimes() {
-        if (!tasksList) return;
-        tasksList.querySelectorAll(".task-item").forEach((taskElement) => {
-          updateRelativeTimeForTask(taskElement);
-        });
-      }
-
-      function hydrateTaskData(taskElement, data) {
-        if (!taskElement) return;
-        taskElement.dataset.taskTitle = data.title || "";
-        taskElement.dataset.taskDescription = data.description || "";
-        taskElement.dataset.taskStatus = data.status || "pending";
-        if (data.created_at) {
-          taskElement.dataset.taskCreatedAt = data.created_at;
-        }
-
-        const titleElement = taskElement.querySelector(".task-title");
-        const descriptionElement = taskElement.querySelector(".task-description");
-        const badgeElement = taskElement.querySelector(".task-status-badge");
-        const markDoneContainer = taskElement.querySelector(".mark-done-container");
-
-        if (titleElement) {
-          titleElement.textContent = data.title;
-        }
-        if (descriptionElement) {
-          descriptionElement.textContent = data.description || "No description";
-        }
-        if (badgeElement) {
-          const statusValue = data.status === "done" ? "done" : "pending";
-          badgeElement.textContent = statusValue === "done" ? "Done" : "Pending";
-          badgeElement.setAttribute("data-status", statusValue);
-        }
-        if (markDoneContainer) {
-          markDoneContainer.classList.toggle("d-none", data.status === "done");
-        }
-
-        updateRelativeTimeForTask(taskElement);
-      }
-
-      function applyFilters() {
-        if (!tasksList) return;
-        const normalizedQuery = filterState.query.trim().toLowerCase();
-        const statusFilterValue = filterState.status;
-        tasksList.querySelectorAll(".task-item").forEach((taskElement) => {
-          const title = (taskElement.dataset.taskTitle || "").toLowerCase();
-          const description = (taskElement.dataset.taskDescription || "").toLowerCase();
-          const status = taskElement.dataset.taskStatus || "pending";
-          const matchesQuery =
-            !normalizedQuery ||
-            title.includes(normalizedQuery) ||
-            description.includes(normalizedQuery);
-          const matchesStatus = statusFilterValue === "all" || status === statusFilterValue;
-          const shouldShow = matchesQuery && matchesStatus;
-          taskElement.classList.toggle("d-none", !shouldShow);
-        });
-        updateListVisibility();
-      }
-
-      document.querySelectorAll(".task-item [data-action='edit']").forEach((button) => {
-        button.addEventListener("click", (event) => {
-          const taskElement = event.currentTarget.closest(".task-item");
-          if (!taskElement) return;
-          currentTaskId = taskElement.dataset.taskId;
-          editTitleInput.value = taskElement.dataset.taskTitle || "";
-          editDescriptionInput.value = taskElement.dataset.taskDescription || "";
-          editStatusSelect.value = taskElement.dataset.taskStatus || "pending";
-        });
+    function applyFilters() {
+      const q = (filterState.query || "").trim().toLowerCase();
+      const st = filterState.status;
+      tasksList?.querySelectorAll(".task-item").forEach((el) => {
+        const title = (el.dataset.taskTitle || "").toLowerCase();
+        const desc  = (el.dataset.taskDescription || "").toLowerCase();
+        const status = el.dataset.taskStatus || "pending";
+        const matchQ = !q || title.includes(q) || desc.includes(q);
+        const matchS = st === "all" || status === st;
+        el.classList.toggle("d-none", !(matchQ && matchS));
       });
+      updateListVisibility();
+    }
 
-      document.querySelectorAll(".task-item [data-action='delete']").forEach((button) => {
-        button.addEventListener("click", (event) => {
-          const taskElement = event.currentTarget.closest(".task-item");
-          if (!taskElement) return;
-          currentTaskId = taskElement.dataset.taskId;
-          deleteTaskTitle.textContent = taskElement.dataset.taskTitle || "";
-        });
+    // open edit modal
+    document.querySelectorAll(".task-item [data-action='edit']").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const el = e.currentTarget.closest(".task-item");
+        if (!el) return;
+        currentTaskId = el.dataset.taskId;
+        editTitleInput.value = el.dataset.taskTitle || "";
+        editDescriptionInput.value = el.dataset.taskDescription || "";
+        editStatusSelect.value = el.dataset.taskStatus || "pending";
       });
-
-      document.querySelectorAll(".task-item [data-action='toggle-done']").forEach((button) => {
-        button.addEventListener("click", async (event) => {
-          const taskElement = event.currentTarget.closest(".task-item");
-          if (!taskElement) return;
-          const taskId = taskElement.dataset.taskId;
-          const toggleButton = event.currentTarget;
-          toggleButtonLoading(toggleButton, true);
-          try {
-            const response = await fetch(`/api/tasks/${taskId}/toggle_done`, {
-              method: "POST",
-            });
-            let data = null;
-            try {
-              data = await response.json();
-            } catch (parseError) {
-              window.todoApp?.showAlert("Unexpected response from the server.", "danger");
-              return;
-            }
-            if (!response.ok || !data.ok) {
-              const message = data?.error || "Failed to update the task.";
-              window.todoApp?.showAlert(message, "danger");
-              return;
-            }
-            hydrateTaskData(taskElement, data.task);
-            applyFilters();
-            const statusMessage =
-              data.status === "done" ? "Task marked as done!" : "Task marked as pending.";
-            window.todoApp?.showAlert(statusMessage, "success");
-          } catch (error) {
-            window.todoApp?.showAlert("Network error. Please try again.", "danger");
-          } finally {
-            toggleButtonLoading(toggleButton, false);
-          }
-        });
-      });
-
-      if (editForm) {
-        editForm.addEventListener("submit", async (event) => {
-          event.preventDefault();
-          if (!currentTaskId) return;
-          toggleButtonLoading(saveTaskButton, true);
-          try {
-            const response = await fetch(`/api/tasks/${currentTaskId}/update`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                title: editTitleInput.value,
-                description: editDescriptionInput.value,
-                status: editStatusSelect.value,
-              }),
-            });
-            let data = null;
-            try {
-              data = await response.json();
-            } catch (parseError) {
-              window.todoApp?.showAlert("Unexpected response from the server.", "danger");
-              return;
-            }
-            if (!response.ok || !data.ok) {
-              const message = data.error || "Failed to update the task.";
-              window.todoApp?.showAlert(message, "danger");
-              return;
-            }
-            const taskElement = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
-            hydrateTaskData(taskElement, data.task);
-            applyFilters();
-            window.todoApp?.showAlert("Task updated successfully!", "success");
-            editModal?.hide();
-            currentTaskId = null;
-          } catch (error) {
-            window.todoApp?.showAlert("Network error. Please try again.", "danger");
-          } finally {
-            toggleButtonLoading(saveTaskButton, false);
-          }
-        });
-      }
-
-      if (confirmDeleteButton) {
-        confirmDeleteButton.addEventListener("click", async () => {
-          if (!currentTaskId) return;
-          toggleButtonLoading(confirmDeleteButton, true);
-          try {
-            const response = await fetch(`/api/tasks/${currentTaskId}/delete`, {
-              method: "POST",
-            });
-            let data = null;
-            try {
-              data = await response.json();
-            } catch (parseError) {
-              window.todoApp?.showAlert("Unexpected response from the server.", "danger");
-              return;
-            }
-            if (!response.ok || !data.ok) {
-              const message = data.error || "Failed to delete the task.";
-              window.todoApp?.showAlert(message, "danger");
-              return;
-            }
-            const taskElement = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
-            if (taskElement) {
-              taskElement.remove();
-              applyFilters();
-            }
-            window.todoApp?.showAlert("Task deleted.", "info");
-            deleteModal?.hide();
-            currentTaskId = null;
-          } catch (error) {
-            window.todoApp?.showAlert("Network error. Please try again.", "danger");
-          } finally {
-            toggleButtonLoading(confirmDeleteButton, false);
-          }
-        });
-      }
-
-      if (searchInput) {
-        const handleSearch = debounce((event) => {
-          filterState.query = event.target.value || "";
-          applyFilters();
-        });
-        searchInput.addEventListener("input", handleSearch);
-      }
-
-      if (statusFilter) {
-        statusFilter.addEventListener("change", (event) => {
-          filterState.status = event.target.value || "all";
-          applyFilters();
-        });
-      }
-
-      if (searchInput) {
-        filterState.query = searchInput.value || "";
-      }
-      if (statusFilter) {
-        filterState.status = statusFilter.value || "all";
-      }
-
-      applyFilters();
-      updateRelativeTimes();
-      window.setInterval(updateRelativeTimes, 60000);
     });
-  </script>
+
+    // open delete modal
+    document.querySelectorAll(".task-item [data-action='delete']").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        const el = e.currentTarget.closest(".task-item");
+        if (!el) return;
+        currentTaskId = el.dataset.taskId;
+        deleteTaskTitle.textContent = el.dataset.taskTitle || "";
+      });
+    });
+
+    // toggle done via JSON
+    document.querySelectorAll(".task-item [data-action='toggle-done']").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const el = e.currentTarget.closest(".task-item");
+        if (!el) return;
+        const taskId = el.dataset.taskId;
+        const button = e.currentTarget;
+        toggleButtonLoading(button, true);
+        try {
+          const res = await fetch(`/api/tasks/${taskId}/toggle_done`, { method: "POST" });
+          let data = null;
+          try { data = await res.json(); } catch { window.todoApp?.showAlert("Unexpected response from the server.", "danger"); return; }
+          if (!res.ok || !data.ok) {
+            window.todoApp?.showAlert(data?.error || "Failed to update the task.", "danger");
+            return;
+          }
+          hydrateTaskData(el, data.task);
+          applyFilters();
+          window.todoApp?.showAlert(
+            data.status === "done" ? "Task marked as done!" : "Task marked as pending.",
+            "success"
+          );
+        } catch {
+          window.todoApp?.showAlert("Network error. Please try again.", "danger");
+        } finally {
+          toggleButtonLoading(button, false);
+        }
+      });
+    });
+
+    // submit edit via JSON
+    editForm?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!currentTaskId) return;
+      toggleButtonLoading(saveTaskButton, true);
+      try {
+        const res = await fetch(`/api/tasks/${currentTaskId}/update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: editTitleInput.value,
+            description: editDescriptionInput.value,
+            status: editStatusSelect.value,
+          }),
+        });
+        let data = null;
+        try { data = await res.json(); } catch { window.todoApp?.showAlert("Unexpected response from the server.", "danger"); return; }
+        if (!res.ok || !data.ok) {
+          window.todoApp?.showAlert(data.error || "Failed to update the task.", "danger");
+          return;
+        }
+        const el = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
+        hydrateTaskData(el, data.task);
+        applyFilters();
+        window.todoApp?.showAlert("Task updated successfully!", "success");
+        editModal?.hide();
+        currentTaskId = null;
+      } catch {
+        window.todoApp?.showAlert("Network error. Please try again.", "danger");
+      } finally {
+        toggleButtonLoading(saveTaskButton, false);
+      }
+    });
+
+    // confirm delete via JSON
+    confirmDeleteButton?.addEventListener("click", async () => {
+      if (!currentTaskId) return;
+      toggleButtonLoading(confirmDeleteButton, true);
+      try {
+        const res = await fetch(`/api/tasks/${currentTaskId}/delete`, { method: "POST" });
+        let data = null;
+        try { data = await res.json(); } catch { window.todoApp?.showAlert("Unexpected response from the server.", "danger"); return; }
+        if (!res.ok || !data.ok) {
+          window.todoApp?.showAlert(data.error || "Failed to delete the task.", "danger");
+          return;
+        }
+        const el = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
+        el?.remove();
+        applyFilters();
+        window.todoApp?.showAlert("Task deleted.", "info");
+        deleteModal?.hide();
+        currentTaskId = null;
+      } catch {
+        window.todoApp?.showAlert("Network error. Please try again.", "danger");
+      } finally {
+        toggleButtonLoading(confirmDeleteButton, false);
+      }
+    });
+
+    // search & filter
+    if (searchInput) {
+      searchInput.addEventListener("input", debounce((e) => {
+        filterState.query = e.target.value || "";
+        applyFilters();
+      }));
+    }
+    statusFilter?.addEventListener("change", (e) => {
+      filterState.status = e.target.value || "all";
+      applyFilters();
+    });
+
+    // init
+    filterState.query = searchInput?.value || "";
+    filterState.status = statusFilter?.value || "all";
+    applyFilters();
+    updateRelativeTimes();
+    setInterval(updateRelativeTimes, 60000);
+  });
+</script>
 {% endblock %}
