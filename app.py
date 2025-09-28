@@ -15,9 +15,9 @@ def create_app() -> Flask:
         raise RuntimeError("Missing GOOGLE_CLOUD_PROJECT environment variable")
 
     client = datastore.Client(project=project_id)
-
     KIND = "Task"
 
+    # ----- helpers -----
     def entity_to_dict(entity: datastore.Entity) -> dict:
         return {
             "id": entity.key.id,
@@ -35,6 +35,14 @@ def create_app() -> Flask:
             serialized["created_at"] = created_at.isoformat()
         return serialized
 
+    def get_task_or_404(task_id: int) -> Optional[datastore.Entity]:
+        key = client.key(KIND, task_id)
+        entity = client.get(key)
+        if entity is None:
+            flash("Task not found.", "error")
+        return entity
+
+    # ----- pages -----
     @app.route("/")
     def index():
         query = client.query(kind=KIND)
@@ -66,13 +74,6 @@ def create_app() -> Flask:
         flash("Task created successfully!", "success")
         return redirect(url_for("index"))
 
-    def get_task_or_404(task_id: int) -> Optional[datastore.Entity]:
-        key = client.key(KIND, task_id)
-        entity = client.get(key)
-        if entity is None:
-            flash("Task not found.", "error")
-        return entity
-
     @app.route("/tasks/<int:task_id>/edit")
     def edit_task(task_id: int):
         entity = get_task_or_404(task_id)
@@ -95,13 +96,7 @@ def create_app() -> Flask:
             flash("Title is required.", "error")
             return redirect(url_for("edit_task", task_id=task_id))
 
-        entity.update(
-            {
-                "title": title,
-                "description": description,
-                "status": status,
-            }
-        )
+        entity.update({"title": title, "description": description, "status": status})
         client.put(entity)
         flash("Task updated successfully!", "success")
         return redirect(url_for("index"))
@@ -113,8 +108,7 @@ def create_app() -> Flask:
         flash("Task deleted.", "info")
         return redirect(url_for("index"))
 
-    # -------- JSON APIs cho modal-driven actions --------
-
+    # ----- JSON APIs for modal-driven actions -----
     @app.post("/api/tasks/<int:task_id>/update")
     def api_update_task(task_id: int):
         entity = get_task_or_404(task_id)
@@ -143,6 +137,20 @@ def create_app() -> Flask:
 
         client.delete(entity.key)
         return jsonify({"ok": True})
+
+    @app.post("/api/tasks/<int:task_id>/toggle_done")
+    def api_toggle_task_done(task_id: int):
+        entity = get_task_or_404(task_id)
+        if entity is None:
+            return jsonify({"ok": False, "error": "Task not found."}), 404
+
+        current_status = entity.get("status", "pending")
+        new_status = "pending" if current_status == "done" else "done"
+        entity["status"] = new_status
+        client.put(entity)
+
+        task = entity_to_dict(entity)
+        return jsonify({"ok": True, "status": new_status, "task": serialize_task(task)})
 
     return app
 

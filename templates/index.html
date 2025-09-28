@@ -35,8 +35,36 @@
   <!-- Danh sách task -->
   <div class="col-12 col-lg-7">
     <div class="card shadow-sm border-0 h-100">
-      <div class="card-header bg-white border-0 pb-0">
+      <div class="card-header border-0 pb-0">
         <h2 class="h5 mb-0">Tasks</h2>
+      </div>
+
+      <!-- thanh search + filter -->
+      <div class="card-body pb-0">
+        <div class="row g-2 g-sm-3 align-items-center">
+          <div class="col-12 col-sm">
+            <div class="input-group shadow-sm">
+              <span class="input-group-text bg-body-secondary border-0">
+                <i class="bi bi-search"></i>
+              </span>
+              <input
+                type="search"
+                class="form-control border-0"
+                id="taskSearchInput"
+                placeholder="Search tasks"
+                aria-label="Search tasks by title or description"
+              />
+            </div>
+          </div>
+          <div class="col-12 col-sm-auto">
+            <label for="taskStatusFilter" class="form-label visually-hidden">Filter by status</label>
+            <select class="form-select shadow-sm" id="taskStatusFilter" aria-label="Filter by task status">
+              <option value="all" selected>All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="done">Done</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <!-- list -->
@@ -48,6 +76,7 @@
           data-task-title="{{ task.title | e }}"
           data-task-description="{{ task.description | default('', true) | e }}"
           data-task-status="{{ task.status }}"
+          data-task-created-at="{{ task.created_at.isoformat() if task.created_at }}"
         >
           <div class="d-flex justify-content-between align-items-start">
             <div>
@@ -56,14 +85,13 @@
                 {{ task.description or 'No description' }}
               </p>
             </div>
-            <small class="text-muted ms-3">
+            <small class="text-muted ms-3 task-created-time">
               {{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at }}
             </small>
           </div>
 
           <div class="d-flex flex-wrap align-items-center gap-2">
-            {% set badge_classes = 'text-bg-success' if task.status == 'done' else 'text-bg-warning text-dark' %}
-            <span class="badge text-uppercase task-status-badge {{ badge_classes }}">
+            <span class="badge text-uppercase task-status-badge" data-status="{{ task.status }}">
               {{ 'Done' if task.status == 'done' else 'Pending' }}
             </span>
 
@@ -79,17 +107,15 @@
               Edit
             </button>
 
-            <!-- Mark done (form post truyền thống) -->
+            <!-- Mark done via JSON toggle -->
             <div class="mark-done-container {% if task.status == 'done' %}d-none{% endif %}">
-              <form method="post" action="{{ url_for('update_task', task_id=task.id) }}" class="d-inline">
-                <input type="hidden" name="title" value="{{ task.title | default('', true) | e }}" />
-                <input type="hidden" name="description" value="{{ task.description | default('', true) | e }}" />
-                <input type="hidden" name="status" value="done" />
-                <button type="submit" class="btn btn-sm btn-outline-success">
+              <button type="button" class="btn btn-sm btn-outline-success" data-action="toggle-done">
+                <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
+                <span class="button-text">
                   <i class="bi bi-check2 me-1"></i>
-                  Mark done
-                </button>
-              </form>
+                  Mark as done
+                </span>
+              </button>
             </div>
 
             <!-- Delete via modal -->
@@ -110,7 +136,7 @@
 
       <!-- empty state -->
       <div class="card-body {% if tasks %}d-none{% endif %}" id="emptyState">
-        <p class="text-muted mb-0">No tasks yet. Add one above!</p>
+        <p class="text-muted mb-0">No tasks to display. Try adjusting your filters or add a new task.</p>
       </div>
     </div>
   </div>
@@ -181,10 +207,10 @@
 {% block scripts %}
 <script>
   document.addEventListener("DOMContentLoaded", () => {
-    const editModalEl = document.getElementById("editTaskModal");
-    const deleteModalEl = document.getElementById("deleteTaskModal");
-    const editModal = editModalEl ? bootstrap.Modal.getOrCreateInstance(editModalEl) : null;
-    const deleteModal = deleteModalEl ? bootstrap.Modal.getOrCreateInstance(deleteModalEl) : null;
+    const editModalElement = document.getElementById("editTaskModal");
+    const deleteModalElement = document.getElementById("deleteTaskModal");
+    const editModal = editModalElement ? bootstrap.Modal.getOrCreateInstance(editModalElement) : null;
+    const deleteModal = deleteModalElement ? bootstrap.Modal.getOrCreateInstance(deleteModalElement) : null;
 
     const editForm = document.getElementById("editTaskForm");
     const editTitleInput = document.getElementById("editTaskTitle");
@@ -198,7 +224,16 @@
     const tasksList = document.getElementById("tasksList");
     const emptyState = document.getElementById("emptyState");
 
+    const searchInput = document.getElementById("taskSearchInput");
+    const statusFilter = document.getElementById("taskStatusFilter");
+
     let currentTaskId = null;
+    const filterState = { query: "", status: "all" };
+
+    function debounce(fn, delay = 300) {
+      let t;
+      return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), delay); };
+    }
 
     function toggleButtonLoading(button, isLoading) {
       if (!button) return;
@@ -209,11 +244,23 @@
       button.disabled = isLoading;
     }
 
-    function updateEmptyStateVisibility() {
+    function updateListVisibility() {
       if (!tasksList || !emptyState) return;
-      const hasItems = tasksList.querySelectorAll(".task-item").length > 0;
-      tasksList.classList.toggle("d-none", !hasItems);
-      emptyState.classList.toggle("d-none", hasItems);
+      const visible = tasksList.querySelectorAll(".task-item:not(.d-none)").length;
+      tasksList.classList.toggle("d-none", visible === 0);
+      emptyState.classList.toggle("d-none", visible !== 0);
+    }
+
+    function updateRelativeTimeForTask(taskEl) {
+      const timeEl = taskEl?.querySelector(".task-created-time");
+      const createdAt = taskEl?.dataset?.taskCreatedAt;
+      if (!timeEl || !createdAt || typeof dayjs === "undefined" || typeof dayjs().fromNow !== "function") return;
+      const parsed = dayjs(createdAt);
+      if (parsed.isValid()) timeEl.textContent = parsed.fromNow();
+    }
+
+    function updateRelativeTimes() {
+      tasksList?.querySelectorAll(".task-item").forEach(updateRelativeTimeForTask);
     }
 
     function hydrateTaskData(taskEl, data) {
@@ -221,6 +268,7 @@
       taskEl.dataset.taskTitle = data.title || "";
       taskEl.dataset.taskDescription = data.description || "";
       taskEl.dataset.taskStatus = data.status || "pending";
+      if (data.created_at) taskEl.dataset.taskCreatedAt = data.created_at;
 
       const titleEl = taskEl.querySelector(".task-title");
       const descEl = taskEl.querySelector(".task-description");
@@ -230,104 +278,158 @@
       if (titleEl) titleEl.textContent = data.title;
       if (descEl) descEl.textContent = data.description || "No description";
       if (badgeEl) {
-        badgeEl.textContent = data.status === "done" ? "Done" : "Pending";
-        badgeEl.classList.remove("text-bg-success", "text-bg-warning", "text-dark");
-        if (data.status === "done") {
-          badgeEl.classList.add("text-bg-success");
-        } else {
-          badgeEl.classList.add("text-bg-warning", "text-dark");
-        }
+        const s = data.status === "done" ? "done" : "pending";
+        badgeEl.textContent = s === "done" ? "Done" : "Pending";
+        badgeEl.setAttribute("data-status", s);
       }
       if (markDoneWrap) markDoneWrap.classList.toggle("d-none", data.status === "done");
+
+      updateRelativeTimeForTask(taskEl);
+    }
+
+    function applyFilters() {
+      const q = (filterState.query || "").trim().toLowerCase();
+      const st = filterState.status;
+      tasksList?.querySelectorAll(".task-item").forEach((el) => {
+        const title = (el.dataset.taskTitle || "").toLowerCase();
+        const desc  = (el.dataset.taskDescription || "").toLowerCase();
+        const status = el.dataset.taskStatus || "pending";
+        const matchQ = !q || title.includes(q) || desc.includes(q);
+        const matchS = st === "all" || status === st;
+        el.classList.toggle("d-none", !(matchQ && matchS));
+      });
+      updateListVisibility();
     }
 
     // open edit modal
     document.querySelectorAll(".task-item [data-action='edit']").forEach((btn) => {
       btn.addEventListener("click", (e) => {
-        const taskEl = e.currentTarget.closest(".task-item");
-        if (!taskEl) return;
-        currentTaskId = taskEl.dataset.taskId;
-        editTitleInput.value = taskEl.dataset.taskTitle || "";
-        editDescriptionInput.value = taskEl.dataset.taskDescription || "";
-        editStatusSelect.value = taskEl.dataset.taskStatus || "pending";
+        const el = e.currentTarget.closest(".task-item");
+        if (!el) return;
+        currentTaskId = el.dataset.taskId;
+        editTitleInput.value = el.dataset.taskTitle || "";
+        editDescriptionInput.value = el.dataset.taskDescription || "";
+        editStatusSelect.value = el.dataset.taskStatus || "pending";
       });
     });
 
     // open delete modal
     document.querySelectorAll(".task-item [data-action='delete']").forEach((btn) => {
       btn.addEventListener("click", (e) => {
-        const taskEl = e.currentTarget.closest(".task-item");
-        if (!taskEl) return;
-        currentTaskId = taskEl.dataset.taskId;
-        deleteTaskTitle.textContent = taskEl.dataset.taskTitle || "";
+        const el = e.currentTarget.closest(".task-item");
+        if (!el) return;
+        currentTaskId = el.dataset.taskId;
+        deleteTaskTitle.textContent = el.dataset.taskTitle || "";
+      });
+    });
+
+    // toggle done via JSON
+    document.querySelectorAll(".task-item [data-action='toggle-done']").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const el = e.currentTarget.closest(".task-item");
+        if (!el) return;
+        const taskId = el.dataset.taskId;
+        const button = e.currentTarget;
+        toggleButtonLoading(button, true);
+        try {
+          const res = await fetch(`/api/tasks/${taskId}/toggle_done`, { method: "POST" });
+          let data = null;
+          try { data = await res.json(); } catch { window.todoApp?.showAlert("Unexpected response from the server.", "danger"); return; }
+          if (!res.ok || !data.ok) {
+            window.todoApp?.showAlert(data?.error || "Failed to update the task.", "danger");
+            return;
+          }
+          hydrateTaskData(el, data.task);
+          applyFilters();
+          window.todoApp?.showAlert(
+            data.status === "done" ? "Task marked as done!" : "Task marked as pending.",
+            "success"
+          );
+        } catch {
+          window.todoApp?.showAlert("Network error. Please try again.", "danger");
+        } finally {
+          toggleButtonLoading(button, false);
+        }
       });
     });
 
     // submit edit via JSON
-    if (editForm) {
-      editForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        if (!currentTaskId) return;
-        toggleButtonLoading(saveTaskButton, true);
-        try {
-          const res = await fetch(`/api/tasks/${currentTaskId}/update`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: editTitleInput.value,
-              description: editDescriptionInput.value,
-              status: editStatusSelect.value,
-            }),
-          });
-          let data = null;
-          try { data = await res.json(); } catch { window.todoApp?.showAlert("Unexpected response from the server.", "danger"); return; }
-          if (!res.ok || !data.ok) {
-            window.todoApp?.showAlert(data.error || "Failed to update the task.", "danger");
-            return;
-          }
-          const taskEl = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
-          hydrateTaskData(taskEl, data.task);
-          window.todoApp?.showAlert("Task updated successfully!", "success");
-          editModal?.hide();
-          currentTaskId = null;
-        } catch {
-          window.todoApp?.showAlert("Network error. Please try again.", "danger");
-        } finally {
-          toggleButtonLoading(saveTaskButton, false);
+    editForm?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!currentTaskId) return;
+      toggleButtonLoading(saveTaskButton, true);
+      try {
+        const res = await fetch(`/api/tasks/${currentTaskId}/update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: editTitleInput.value,
+            description: editDescriptionInput.value,
+            status: editStatusSelect.value,
+          }),
+        });
+        let data = null;
+        try { data = await res.json(); } catch { window.todoApp?.showAlert("Unexpected response from the server.", "danger"); return; }
+        if (!res.ok || !data.ok) {
+          window.todoApp?.showAlert(data.error || "Failed to update the task.", "danger");
+          return;
         }
-      });
-    }
+        const el = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
+        hydrateTaskData(el, data.task);
+        applyFilters();
+        window.todoApp?.showAlert("Task updated successfully!", "success");
+        editModal?.hide();
+        currentTaskId = null;
+      } catch {
+        window.todoApp?.showAlert("Network error. Please try again.", "danger");
+      } finally {
+        toggleButtonLoading(saveTaskButton, false);
+      }
+    });
 
     // confirm delete via JSON
-    if (confirmDeleteButton) {
-      confirmDeleteButton.addEventListener("click", async () => {
-        if (!currentTaskId) return;
-        toggleButtonLoading(confirmDeleteButton, true);
-        try {
-          const res = await fetch(`/api/tasks/${currentTaskId}/delete`, { method: "POST" });
-          let data = null;
-          try { data = await res.json(); } catch { window.todoApp?.showAlert("Unexpected response from the server.", "danger"); return; }
-          if (!res.ok || !data.ok) {
-            window.todoApp?.showAlert(data.error || "Failed to delete the task.", "danger");
-            return;
-          }
-          const taskEl = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
-          if (taskEl) {
-            taskEl.remove();
-            updateEmptyStateVisibility();
-          }
-          window.todoApp?.showAlert("Task deleted.", "info");
-          deleteModal?.hide();
-          currentTaskId = null;
-        } catch {
-          window.todoApp?.showAlert("Network error. Please try again.", "danger");
-        } finally {
-          toggleButtonLoading(confirmDeleteButton, false);
+    confirmDeleteButton?.addEventListener("click", async () => {
+      if (!currentTaskId) return;
+      toggleButtonLoading(confirmDeleteButton, true);
+      try {
+        const res = await fetch(`/api/tasks/${currentTaskId}/delete`, { method: "POST" });
+        let data = null;
+        try { data = await res.json(); } catch { window.todoApp?.showAlert("Unexpected response from the server.", "danger"); return; }
+        if (!res.ok || !data.ok) {
+          window.todoApp?.showAlert(data.error || "Failed to delete the task.", "danger");
+          return;
         }
-      });
-    }
+        const el = document.querySelector(`.task-item[data-task-id='${currentTaskId}']`);
+        el?.remove();
+        applyFilters();
+        window.todoApp?.showAlert("Task deleted.", "info");
+        deleteModal?.hide();
+        currentTaskId = null;
+      } catch {
+        window.todoApp?.showAlert("Network error. Please try again.", "danger");
+      } finally {
+        toggleButtonLoading(confirmDeleteButton, false);
+      }
+    });
 
-    updateEmptyStateVisibility();
+    // search & filter
+    if (searchInput) {
+      searchInput.addEventListener("input", debounce((e) => {
+        filterState.query = e.target.value || "";
+        applyFilters();
+      }));
+    }
+    statusFilter?.addEventListener("change", (e) => {
+      filterState.status = e.target.value || "all";
+      applyFilters();
+    });
+
+    // init
+    filterState.query = searchInput?.value || "";
+    filterState.status = statusFilter?.value || "all";
+    applyFilters();
+    updateRelativeTimes();
+    setInterval(updateRelativeTimes, 60000);
   });
 </script>
 {% endblock %}
